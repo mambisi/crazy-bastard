@@ -1,0 +1,23 @@
+[package]
+name = "crazy-bastard"
+version = "0.1.0"
+edition = "2024"
+description = "Experimental macOS command isolation with private sessions, explicit inputs and a Git hook adapter"
+rust-version = "1.85"
+publish = false
+default-run = "cb"
+
+[[bin]]
+name = "cb"
+path = "src/main.rs"
+
+[[bin]]
+name = "cb-test-probe"
+path = "tests/support/probe.rs"
+required-features = ["test-probe"]
+
+[features]
+test-probe = []
+
+[dependencies]
+libc = "=0.2.189"
