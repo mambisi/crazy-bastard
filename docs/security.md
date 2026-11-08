@@ -1,8 +1,18 @@
 # Security model
 
-CB starts with a deny-by-default policy. The initial supported boundary is a
-single noninteractive command on macOS. A successful compatibility probe is
+The optional selected-source/Codex review has a distinct, explicitly requested
+harness networking/authentication profile. Its controls and limits are in
+[review.md](review.md); the `cb run` prototype policy below is unchanged.
+
+The experimental `cb run` launcher starts with a deny-by-default policy. Its
+implemented boundary is a single noninteractive command on macOS. A successful compatibility probe is
 required before that command starts; a rejected policy stops the launch.
+
+`cb code` requires an isolated editor workspace and currently refuses launch.
+The separate `cb host code` helper provides explicit host review; its optional
+observer is not this sandbox policy and does not block network access. Host Git
+is explicitly `cb host git`/`cb-git`. Read [product.md](product.md) for command
+admission and [comparison.md](comparison.md) for the runtime reuse decision.
 
 ## Granted access
 
@@ -75,11 +85,14 @@ file/network restrictions.
 
 ## Strong-isolation direction
 
-The next backend should use a disposable macOS virtual machine with a private
-disk, no shared home, no clipboard, no agent forwarding and no host network
-bridge by default. Guest startup, capability probes and teardown must succeed
-before a launch is reported as protected. Host file exchange and approved
-network destinations need explicit brokers, not inherited host permissions.
+Evaluate existing guest-workspace runtimes before implementing a new VM or host
+enforcement engine. The intended guest boundary has a private disk, no shared
+home, clipboard or credential-agent forwarding, and default-deny egress. A
+trusted host editor connected to a guest workspace is distinct from a macOS GUI
+inside a guest. Guest startup, effective-policy probes and teardown need verified
+receipts before the workspace is reported as protected. Imported/exported source
+and approved network destinations require explicit brokers. No such adapter is
+integrated yet; failure cannot downgrade into the host-review mode.
 
 Sources: [Apple App Sandbox](https://developer.apple.com/documentation/security/app-sandbox),
 [Apple's deprecation discussion](https://developer.apple.com/forums/tags/app-sandbox),

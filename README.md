@@ -1,99 +1,90 @@
 # crazy-bastard (`cb`)
 
-`cb` is an experimental Rust CLI for reducing what a selected command can
-access on macOS. It combines a private execution session with explicit file
-inputs, a minimal environment and an operating-system access policy. It also
-provides a separate Git adapter that suppresses automatic hooks.
+CB is an experimental Rust tool for reviewing unfamiliar repositories and choosing
+an explicit execution boundary. The intended workflow is **inspect, import into
+an isolated workspace, review permissions, then export or discard changes**.
 
-The long-term goal is an isolated environment for applications, including GUI
-apps, backed by a disposable VM. **The current release supports only
-single-process, noninteractive CLI programs.** GUI applications, interactive
-terminals, package installations and workflows requiring subprocesses are not
-supported yet.
+Today it provides a bounded static inspector, an experimental macOS CLI sandbox,
+and explicit host editor/Git helpers. **The isolated editor workspace and
+approval TUI are not implemented.** `cb code .` refuses launch until a verified
+workspace runtime is integrated; it never falls back to a host window.
 
-## The finding behind the project
+## Is CB worth building?
 
-A repository contains more than application source. Editors and Git also read
-configuration and metadata, and some of that configuration can start programs.
-Reviewing the Rust, JavaScript or Python application code alone can miss those
-execution paths.
+A new general-purpose sandbox, firewall or approval engine is not the recommended
+scope. Existing tools already cover those functions. OpenShell also documents
+network approvals and remote editor connections, so those features alone are
+not a reason to build CB.
 
-Two examples explain the problem:
+The narrower experiment is a repository-review workflow using an existing
+runtime. It must demonstrate safer defaults or lower user error than using that
+runtime directly. If it only adds new command names, stop the expansion.
+[The researched feature comparison](docs/comparison.md) covers OpenShell, nono,
+Lima, LuLu, Little Snitch, Santa, sandbox-runtime and Agent Safehouse. It compares
+documented features, not independently verified security.
 
-- **Editor terminal configuration.** Workspace settings can change a terminal
-  profile's executable, arguments or environment. Starting a familiar-looking
-  terminal can therefore run different instructions from the ones the developer
-  expects. VS Code provides Workspace Trust and Restricted Mode to limit
-  execution features while unfamiliar content is being reviewed.
-- **Git hook configuration.** Git can invoke hooks during ordinary operations,
-  including checkout and commit. Hook files and a configured `core.hooksPath`
-  deserve review before operating on unfamiliar local Git metadata.
+[The product design](docs/product.md) defines the command migration, proposed
+workspace lifecycle, runtime reuse and go/no-go experiment.
+
+## Why repository review needs more than source inspection
+
+Editors and Git consume configuration that can launch programs. Workspace
+terminal profiles can select another executable, arguments or environment.
+Tasks and debugger settings can start commands. Git can invoke hooks during
+ordinary operations, and a custom `core.hooksPath` can redirect hook discovery.
 
 A normal clone does not copy another repository's client-side hooks. Archives
 containing Git metadata, setup scripts and local configuration are separate
-ways hooks can appear. Tracked editor settings can arrive with an ordinary
-clone. These are different entry points, and both need a clear trust decision.
+ways hooks can appear. Tracked editor settings can arrive with an ordinary clone.
+These paths need a trust decision before normal developer tools consume them.
 
 ```mermaid
 flowchart LR
-    A["Project settings or Git metadata"] --> B["Routine developer action"]
-    B --> C["Command execution"]
-    C --> D["Resources available to the developer account"]
+    A["Unfamiliar repository"] --> B["Read-only inspection"]
+    B --> C["Proposed: controlled import"]
+    C --> D["Proposed: verified isolated workspace"]
+    D --> E["Proposed: permission decisions"]
+    E --> F["Proposed: review and explicit export"]
 ```
 
-Once a command runs as the developer, it may reach files and services available
-to that account. Owner-only file permissions do not separate a user from a
-process running as that same user. Actual access still depends on OS privacy
-controls, encryption, permissions and service approvals.
-
-A suspicious launch instruction establishes an execution risk. Confirming that
-it ran, determining what it accessed and proving that data left the machine are
-separate questions. This repository documents the general problem and defensive
-controls; it contains no personal incident timeline, account inventory, attacker
-infrastructure or incident-specific payloads.
+A suspicious launch instruction establishes an execution risk. Whether it ran,
+what it accessed and whether data left the machine are separate questions.
+Processes running as the same user can reach that account's resources, subject
+to OS privacy controls, encryption and service approvals. A fresh profile or
+owner-only file permissions do not provide an OS isolation boundary.
 
 References: [VS Code terminal profiles](https://code.visualstudio.com/docs/terminal/profiles),
 [Workspace Trust](https://code.visualstudio.com/docs/editing/workspaces/workspace-trust),
-[Git hooks](https://git-scm.com/docs/githooks), and
-[how client-side hooks are distributed](https://git-scm.com/book/en/v2/Customizing-Git-Git-Hooks).
+and [Git hooks and their distribution](https://git-scm.com/book/en/v2/Customizing-Git-Git-Hooks).
 
-## Two distinct operating modes
+## Commands and boundaries
 
-| Command | What it does | Boundary |
-| --- | --- | --- |
-| `cb run --experimental-seatbelt -- COMMAND` | Starts a selected command in a private session with a restrictive macOS policy. | Experimental single-process containment; shares the host kernel. |
-| `cb git ...` or `cb-git ...` | Runs the host Git executable with hooks and fsmonitor suppressed. | A Git execution policy, **not** filesystem or network isolation. |
-| `cb doctor` | Reports platform, backend availability and unsupported features. | Informational; it does not launch a program or certify the host. |
-
-The Git adapter can still use normal host files, network access and configured
-Git authentication. Do not treat it as equivalent to `cb run` or as approval to
-build an unfamiliar project.
-
-## What the launcher restricts
-
-These controls apply to `cb run`:
-
-| Area | Current behavior |
+| Command | Behavior and status |
 | --- | --- |
-| Home and temporary files | A fresh private session supplies `HOME`, `TMPDIR` and a working directory. The real home directory is not granted. |
-| Inputs | Only explicitly selected regular files are copied in. No host directories are mounted or copied recursively. |
-| Environment | An allowlist replaces the parent environment. Tokens, loader variables and agent socket variables are not inherited. |
-| Open descriptors | Extra inherited file descriptors are marked close-on-exec before the program starts. |
-| Network and services | The policy grants no TCP/Unix socket network access or Mach service lookup. Synthetic tests exercise network denial. |
-| Process creation | Fork and spawn are denied. Programs requiring child processes are unsupported. |
-| Lifetime | The default wall limit is 30 seconds. SIGINT, SIGTERM, deadline expiry or output failure stops and reaps CB's owned command. |
-| Output | Terminal control and bidirectional control characters become visible text. Each output stream is limited to 8 MiB. |
-| Cleanup | The private session is removed on normal completion. Cleanup failures are reported. |
+| `cb inspect DIRECTORY` | Static launch-surface review, compiled with `--features scanner`. No project commands run. |
+| `cb run --experimental-seatbelt -- COMMAND` | Experimental single-process macOS isolation, sharing the host kernel. |
+| `cb code [DIRECTORY]` | Isolation-required editor workspace; currently unavailable and refuses launch. |
+| `cb host code [--monitor] [DIRECTORY]` | Explicit hardened host window. Original files remain editable; host access is not isolated. |
+| `cb host git ...` | Host Git with hooks/fsmonitor suppressed. Configured host facilities still require trust. |
+| `cb doctor` | Reports shipped capabilities without executing tools or certifying security. |
+| `cb-git ...` | Existing executable-name adapter for the same host Git policy. |
 
-Some system executable/library paths and filesystem metadata remain readable.
-CB does not hide the machine's identity or make the host invisible. Explicit
-input files are deliberately available to the launched program, so do not select
-files containing secrets unless that disclosure is intended.
+Use `cb COMMAND --help` or `cb host code --help` for details.
+
+Migration: the former host `cb code .` is now `cb host code .`. The old `cb git`
+spelling returns an error pointing to `cb host git` without running Git.
+`cb-git` remains compatible. `cb scan` is a read-only alias for `cb inspect`.
+`cb code --vm .` retains isolation-required intent; `--vm` is refused in host mode.
 
 ## Build and try
 
-The project pins Rust 1.98.1 and commits its dependency lockfile. The launcher
-requires macOS and `/usr/bin/sandbox-exec`.
+Rust is pinned to 1.98.1. **Default and static-scanner builds use only `libc`.**
+The optional `review` feature adds exactly pinned `ast-grep-core` and four grammar
+packages, with all transitive versions/checksums committed in `Cargo.lock`.
+The macOS monitor uses a project-owned C shim compiled with Apple's tools/SDK.
+The optional parser compiles Tree-sitter and its C grammars from the locked
+crates. A future runtime or image remains a dependency even if it is absent
+from `Cargo.lock`.
 
 ```sh
 git clone https://github.com/mambisi/crazy-bastard.git
@@ -101,122 +92,196 @@ cd crazy-bastard
 cargo build --locked --release --bin cb
 
 ./target/release/cb doctor
+./target/release/cb --help
 ./target/release/cb run --experimental-seatbelt -- /bin/echo hello
-./target/release/cb run --experimental-seatbelt -- /usr/bin/env
 ```
 
-The environment example displays the session's minimal environment. It does
-not receive the invoking shell's environment. Stdin is disconnected, so this
-release does not support interactive applications or piping input into them.
-Arguments are passed directly; a shell is used only when explicitly selected.
-
-Before the requested program starts, CB checks that the policy can launch a
-harmless compatibility probe. A rejected policy stops the launch. CB does not
-automatically widen permissions or retry without isolation. This compatibility
-check is not proof that every possible program is safely contained.
-
-### Give a command one input file
+The default build excludes the inspector. Enable it explicitly:
 
 ```sh
-printf 'hello from a fixture\n' > example.txt
-
-./target/release/cb run --experimental-seatbelt --input ./example.txt -- \
-  /bin/sh -c 'read -r line < "$CB_INPUT_DIR/000-example.txt"; printf "%s\n" "$line"'
+cargo build --locked --release --features scanner --bin cb
+./target/release/cb inspect --json /path/to/unfamiliar-repository
 ```
 
-Input names receive a numeric prefix inside `CB_INPUT_DIR`. The original file
-is not mounted or modified. Up to 32 inputs are accepted, with a combined size
-limit of 64 MiB. Symlinks, special files and directory inputs are refused.
-Non-system executables are also copied into the session, with a 256 MiB limit.
-Programs needing libraries outside the allowed system paths may fail.
-
-Use `--timeout SECONDS` before `--` to choose a wall limit from 1 to 3600 seconds.
-There is no network opt-in or unrestricted execution flag in this release.
-
-### Optional CLI installation
+Optional CLI installation:
 
 ```sh
 cargo install --path . --locked --bin cb
 ln -s cb "$HOME/.cargo/bin/cb-git"
 ```
 
-Ensure the installation directory is on your `PATH`. A symlink or copy named
-`cb-git` dispatches directly to the Git adapter. The test probe is not installed
-by this command.
+Ensure the installation directory is on `PATH`. A symlink or copy named `cb-git`
+dispatches to the host Git adapter. The test probe is not installed by this command.
 
-## Git hooks and VS Code
+## Inspect without executing
+
+The `scanner` feature checks these surfaces at the selected root:
+
+- `.vscode/settings.json`, `tasks.json` and `launch.json`: terminal/tool overrides,
+  trust-related settings, automatic tasks, debugger launches and command inputs.
+- Top-level `*.code-workspace` files and their embedded settings/tasks/launch.
+- Local `.git/config`, `.git/config.worktree` and non-sample `.git/hooks` files:
+  hooks, fsmonitor, aliases, includes, filters and selected executable helpers.
+- `package.json` scripts and conventional Rust `build.rs` presence.
+
+The inspector starts no Git, shell, editor, build, package tool or network request.
+Reports contain stable rule IDs, relative paths, locations and generic reasons,
+with command/configuration values omitted. File names can still be private.
+A finding may describe legitimate configuration needing review.
+
+Exit status is 0 for no findings in scope, 1 for findings and 2 for an incomplete
+scan or invalid invocation. Incomplete takes precedence. Reports never establish
+that a project is malware-free. This is not a dependency-CVE, secret or general
+source-code audit.
+
+Descendant links, special files, ambiguous JSON, unreadable/oversized inputs and
+unsupported Git syntax produce incomplete results. Includes, custom hook paths,
+external Git metadata and workspace references are not followed automatically.
+Use `cb inspect --git-dir DIRECTORY` or `cb inspect --hooks DIRECTORY` for explicit
+metadata/hook reviews. Nested projects, global configuration, installed extensions
+and running processes are outside scope. See [the inspector guide](docs/scanner.md).
+
+## Optional AST and Codex CLI review
+
+Build with `--features review` (includes `scanner` and the locked AST library).
+Plain `cb inspect` stays static. Select source files explicitly to run bundled
+`ast-grep` patterns and optionally add a Codex CLI review:
 
 ```sh
-cb git -C /path/to/repository status
-cb git -C /path/to/repository switch topic
+cargo build --locked --release --features review --bin cb
+./target/release/cb inspect /path/to/repository \
+  --source src/app.js \
+  --with codex --harness-bin /trusted/native/codex
 ```
 
-The adapter invokes `/usr/bin/git` with command-level hook suppression,
-fsmonitor disabled and the `ext` protocol disabled. Fixed policy options follow
-caller global options, so repository settings and earlier `-c` flags cannot
-re-enable the covered hooks. Known hook-event switches also apply on Git versions
-that support configured hooks. Git 2.36 or newer is required for fsmonitor
-compatibility.
+This uses your existing private Codex CLI `auth.json` login in place; **no API key
+is required**. Use the native Codex binary behind any npm/Bun launcher.
+No separate ast-grep installation is needed. CB runs its bundled parser in a
+separate sandboxed copy of itself. An explicit `--ast-grep /absolute/native/binary`
+override remains available, with its version outside Cargo.lock. No runtime tool
+is automatically downloaded or installed.
+The optional review sends selected source and AST matches to OpenAI and can
+consume paid usage. Omit `--with` and `--harness-bin` for local AST checks only:
+`cb inspect DIRECTORY --source src/app.js`. See the review guide for dependency
+versions and the full optional dependency budget.
 
-Aliases, explicit `git hook` execution and external Git subcommands are refused.
-Reviewed hooks used for linting, signing workflows or Git LFS uploads do not run
-through this adapter. Git filters, merge drivers, credential helpers, editors,
-transports and explicitly requested commands are **not sandboxed** by it.
+Both stages run in separate experimental macOS Seatbelt sessions. The Codex
+profile allows inference networking and read-only access to its login file,
+requests disabled tools/configuration discovery, and denies subprocess creation
+and repository/host-home reads. Fixed developer instructions treat source as
+untrusted data; validated findings must cite exact snapshot evidence. These
+controls reduce exposure; **they cannot guarantee prevention of prompt injection**.
+Model output grants no permissions and makes no fixes. Authentication refresh,
+keychain-only logins and CLI versions may be unsupported; failure has no host
+fallback. Other harness adapters are not yet integrated. See [the review guide](docs/review.md).
 
-For VS Code, set the user-level `git.path` to the absolute path of `cb-git` and
-reload the window after saving work. This routes that Git extension's operations
-through the adapter; it does not intercept terminals, other editors or remote
-hosts. CB does not itself sandbox the VS Code GUI.
+## Experimental single-process isolation
 
-Keep unfamiliar workspaces in Restricted Mode. Review previously trusted folders
-and avoid trusting a broad parent containing arbitrary downloaded projects.
-[The editor hardening guide](docs/editor-hardening.md) explains the settings,
-Git configuration precedence and the tradeoffs of disabling hooks. CB does not
-change host settings automatically when it starts.
+`cb run` requires compatible macOS and `/usr/bin/sandbox-exec`. A successful
+harmless policy probe is required before the selected command starts. There is
+no unprotected fallback or network opt-in.
 
-## Limits and the VM direction
+| Area | Behavior of `cb run` |
+| --- | --- |
+| Files | Fresh private home, temporary/work directories; explicit input copies only. No recursive project mounts. |
+| Environment | Replaced with an allowlist; host credentials, loader variables and agent sockets are not inherited. |
+| Descriptors | Extra inherited descriptors are marked close-on-exec. |
+| Network/services | No network or Mach service lookup granted. |
+| Processes | Fork/spawn denied; GUI apps and multi-process package/build workflows unsupported. |
+| Lifetime | Default 30-second deadline; `--timeout` accepts 1..3600. SIGINT/SIGTERM stops and reaps the owned command. |
+| Output | Terminal/directional controls escaped; each stream capped at 8 MiB. Stdin disconnected. |
+| Cleanup | Private session removed on normal completion; cleanup failures reported. |
 
-The current backend uses macOS's deprecated/private `sandbox-exec` interface and
-shares the host kernel. It is an experimental prototype, not a production
-malware-analysis environment or a substitute for an independently reviewed
-security boundary. Do not use this release to detonate real malware.
+```sh
+printf 'hello from a fixture\n' > example.txt
+cb run --experimental-seatbelt --input ./example.txt -- \
+  /bin/sh -c 'read -r line < "$CB_INPUT_DIR/000-example.txt"; printf "%s\n" "$line"'
+```
 
+Input names receive numeric prefixes. Up to 32 regular files enter the session,
+with a 64 MiB combined limit; symlinks and directory inputs are refused. Non-system
+executables are copied with a 256 MiB limit. External libraries may be unavailable.
+Arguments are passed literally; a shell runs only when explicitly selected.
+Selected inputs are deliberately readable by the command. System executable/library
+paths and filesystem metadata remain visible.
+
+## Explicit host helpers
+
+```sh
+cb host code .
+cb host code --monitor .
+cb host git -C /path/to/repository status
+```
+
+Host Code uses `/Applications/Visual Studio Code.app` with a private profile/home,
+an empty extensions directory, disabled installed extensions, Restricted Mode
+defaults, disabled automatic tasks and built-in Git discovery, and a reduced
+environment. Keep it untrusted. The original folder is editable. Keep CB running
+and quit that dedicated editor instance to finish; Ctrl-C stops its owned process
+group. Normal settings and project configuration are not rewritten at launch.
+
+The optional observer polls the owned group every 250 ms. Selected unexpected
+executables, open files in the real home outside the workspace, changed protective
+settings or incomplete observations stop the group. IP sockets with remote peers
+generate notifications; traffic is not blocked. Benign editor activity can trigger
+a stop. Polling can miss activity or see
+it after access. It is not a pre-execution approval system, firewall or proof that
+an attack did not occur. See [the host launcher guide](docs/code.md).
+
+Host Git invokes `/usr/bin/git` with command-level hooks/fsmonitor suppression and
+the `ext` protocol disabled. Known hook-event switches apply on supported Git
+versions. Caller options cannot re-enable covered hooks; Git 2.36+ is required.
+Aliases, explicit `git hook` and external Git subcommands are refused. Filters,
+merge drivers, editors, helpers, transports, host authentication and networking
+remain outside isolation. Reviewed lint/signing/LFS hooks also stay disabled.
+
+Set VS Code's user-level `git.path` to the absolute `cb-git` path and reload after
+saving work to route that extension's Git operations through the adapter. It does
+not intercept terminals, other editors or remote hosts. Global `core.hooksPath`
+defaults can be overridden by local/worktree config; the adapter sets its policy
+on each invocation. See [the editor hardening guide](docs/editor-hardening.md).
+
+## Planned workspace boundary and limits
+
+The [product design](docs/product.md) prioritizes validating an existing runtime
+adapter before building a new engine. The [authorization design](docs/authorization.md)
+retains the possible native macOS agent/TUI architecture and its deadline,
+entitlement and identity requirements. These integrations are not shipped.
+No new runtime, image, service or TUI dependency is installed automatically.
+
+Seatbelt is deprecated/private and shares the host kernel. CB is an experimental
+prototype, not a production malware-analysis environment or an independently
+reviewed security boundary. Do not use this release to detonate real malware.
 It does not defend against an already compromised host, kernel exploits, every
-covert channel or comprehensive CPU, memory and disk exhaustion. SIGKILL, power
-loss or a host crash can leave session data or a contained command behind.
+covert channel or comprehensive resource exhaustion. SIGKILL, crashes and power
+loss can leave data or processes behind. Read [the security model](docs/security.md).
 
-The next major boundary is a disposable VM with its own disk, no shared home,
-no clipboard or agent forwarding, and explicit brokers for file/network access.
-That backend and GUI application support are **not implemented**. Read the
-[security model](docs/security.md) for the current grants, denials and failure
-behavior.
-
-## Validation
+## Validation and publication privacy
 
 ```sh
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --no-default-features
+cargo test --locked --features scanner
 cargo test --locked --all-features
 ```
 
-Native isolation checks are opt-in because they require macOS sandbox permission
-and may be blocked by a parent sandbox:
+Native isolation/observation tests require macOS permissions and use owned
+processes, dummy files and local sockets:
 
 ```sh
-cargo test --locked --features test-probe --test macos -- \
-  --ignored --test-threads=1
+cargo test --locked --features test-probe --test macos -- --ignored --test-threads=1
+cargo test --locked --all-features --lib code:: -- --ignored --test-threads=1
 ```
 
-The checks use synthetic files, owned dummy processes and local sockets. They
-cover argument handling, environment isolation, input routes, descriptor
-handling, network denial, process restrictions, cleanup, deadlines and hook
-suppression. `cb-test-probe` is built only with the explicit `test-probe` feature;
-it is not part of a normal release. Passing these checks does not establish
-coverage of every kernel interface.
+The explicit `test-probe` feature is for fixtures, not normal installation. The
+checks cover implemented controls and command admission; they do not certify
+coverage of every kernel interface or a proposed runtime.
+The optional source-review native checks and their explicit trusted-tool inputs
+are documented in [review.md](docs/review.md). They use fixed responses and local
+configuration commands, never a paid model turn.
 
-## Publication privacy
-
-The public findings are generalized. Personal paths, account inventories,
-incident timelines, captured system state, attacker endpoints and sensitive
-reproduction material stay outside this repository. Examples use synthetic
-values, and no credentials or private audit reports belong in the source tree.
+Public findings remain generalized. Personal incident timelines, paths, account
+inventories, machine snapshots, attacker endpoints and sensitive reproductions
+stay outside the repository. Examples are synthetic. Credentials and private
+audit reports never belong in source, tests, logs or screenshots.

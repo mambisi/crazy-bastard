@@ -5,6 +5,8 @@ use std::{
     os::unix::net::UnixStream,
     time::Duration,
 };
+#[cfg(feature = "review")]
+mod review_probe;
 
 fn outcome<T>(result: io::Result<T>) {
     match result {
@@ -16,6 +18,8 @@ fn outcome<T>(result: io::Result<T>) {
 fn main() {
     let args: Vec<_> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
+        #[cfg(feature = "review")]
+        Some("run" | "exec") => review_probe::run(&args),
         Some("read") => outcome(fs::read(&args[1])),
         Some("write") => outcome(fs::write(&args[1], b"dummy fixture")),
         Some("tcp") => {

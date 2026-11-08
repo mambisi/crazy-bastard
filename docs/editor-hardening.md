@@ -30,9 +30,9 @@ such as the home directory or a folder containing arbitrary downloaded projects.
 An explicit trust decision enables additional execution capabilities.
 
 The `cb-git` executable is a copy or symlink of the compiled `cb` binary with that
-name. It routes VS Code Git operations through `cb git`. It does not intercept
+name. It routes VS Code Git operations through `cb host git`. It does not intercept
 terminals, other editors or tools that invoke another Git binary. For those,
-use `cb git` explicitly. Remote SSH, WSL and containers have separate settings
+use `cb host git` explicitly. Remote SSH, WSL and containers have separate settings
 and executable installations.
 
 Reload the VS Code window after changing `git.path` so an already-running Git

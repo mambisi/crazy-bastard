@@ -1,4 +1,5 @@
 use crazy_bastard::session::Session;
+use std::os::unix::process::CommandExt;
 use std::{
     fs,
     os::unix::fs::PermissionsExt,
@@ -58,7 +59,7 @@ fn checkout_hooks_are_suppressed_despite_local_cli_and_environment_overrides() {
     assert!(root.root().join("hook-ran").exists());
     fs::remove_file(root.root().join("hook-ran")).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_cb"))
-        .args(["git", "-C"])
+        .args(["host", "git", "-C"])
         .arg(root.root())
         .args(["-c", "core.hooksPath=hooks", "switch", "main"])
         .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -79,7 +80,8 @@ fn commit_and_reference_transaction_hooks_are_suppressed() {
     }
     git(root.root(), &["config", "core.hooksPath", "hooks"]);
     let output = Command::new(env!("CARGO_BIN_EXE_cb"))
-        .args(["git", "-C"])
+        .arg0("cb-git")
+        .args(["-C"])
         .arg(root.root())
         .args(["commit", "--allow-empty", "-m", "Guarded fixture"])
         .env("GIT_CONFIG_NOSYSTEM", "1")

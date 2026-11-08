@@ -20,13 +20,6 @@ pub const PROFILE: &str = r#"(version 1)
 (allow file-read* file-write* file-map-executable (subpath (param "CB_ROOT")))
 "#;
 
-pub fn doctor() -> String {
-    format!(
-        "crazy-bastard (cb) 0.1.0\nPlatform: {}\nSeatbelt executable: {}\nBackend: experimental single-process CLI\nNetwork and Mach services: denied\nHost home and credentials: not granted\nGUI/VM backend: not implemented\nNo command was launched.",
-        std::env::consts::OS,
-        Path::new("/usr/bin/sandbox-exec").is_file()
-    )
-}
 pub fn require_backend() -> Result<()> {
     if !cfg!(target_os = "macos") || !Path::new("/usr/bin/sandbox-exec").is_file() {
         return Err(invalid(

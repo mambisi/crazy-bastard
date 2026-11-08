@@ -50,6 +50,25 @@ fn wait(child: &mut OwnedChild, timeout: Duration, failed: &AtomicBool) -> Resul
     }
 }
 fn command(root: &Path, executable: &Path, arguments: &[std::ffi::OsString]) -> Result<Command> {
+    command_with_profile(root, executable, arguments, sandbox::PROFILE)
+}
+
+pub(crate) fn command_with_profile(
+    root: &Path,
+    executable: &Path,
+    arguments: &[std::ffi::OsString],
+    profile: &str,
+) -> Result<Command> {
+    command_with_parameters(root, executable, arguments, profile, &[])
+}
+
+pub(crate) fn command_with_parameters(
+    root: &Path,
+    executable: &Path,
+    arguments: &[std::ffi::OsString],
+    profile: &str,
+    parameters: &[std::ffi::OsString],
+) -> Result<Command> {
     // Snapshot inherited descriptors before spawn creates its own CLOEXEC pipes.
     // This CLI has not started relay threads yet. No extra host file descriptor
     // is an intentional capability of the launched command.
@@ -63,10 +82,12 @@ fn command(root: &Path, executable: &Path, arguments: &[std::ffi::OsString]) -> 
     let mut c = Command::new("/usr/bin/sandbox-exec");
     let mut parameter = std::ffi::OsString::from("CB_ROOT=");
     parameter.push(root);
-    c.arg("-D")
-        .arg(parameter)
-        .arg("-p")
-        .arg(sandbox::PROFILE)
+    c.arg("-D").arg(parameter);
+    for parameter in parameters {
+        c.arg("-D").arg(parameter);
+    }
+    c.arg("-p")
+        .arg(profile)
         .arg(executable)
         .args(arguments)
         .env_clear()

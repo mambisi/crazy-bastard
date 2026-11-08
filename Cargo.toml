@@ -2,7 +2,7 @@
 name = "crazy-bastard"
 version = "0.1.0"
 edition = "2024"
-description = "Experimental macOS command isolation with private sessions, explicit inputs and a Git hook adapter"
+description = "Unfamiliar-repository inspection and explicit execution boundaries, with experimental macOS CLI isolation and host review"
 rust-version = "1.85"
 publish = false
 default-run = "cb"
@@ -17,7 +17,22 @@ path = "tests/support/probe.rs"
 required-features = ["test-probe"]
 
 [features]
+default = []
+scanner = []
+review = [
+    "scanner",
+    "dep:ast-grep-core",
+    "dep:tree-sitter-javascript",
+    "dep:tree-sitter-python",
+    "dep:tree-sitter-rust",
+    "dep:tree-sitter-typescript",
+]
 test-probe = []
 
 [dependencies]
 libc = "=0.2.189"
+ast-grep-core = { version = "=0.51.1", optional = true, default-features = false, features = ["tree-sitter"] }
+tree-sitter-javascript = { version = "=0.25.0", optional = true }
+tree-sitter-python = { version = "=0.25.0", optional = true }
+tree-sitter-rust = { version = "=0.24.2", optional = true }
+tree-sitter-typescript = { version = "=0.23.2", optional = true }
